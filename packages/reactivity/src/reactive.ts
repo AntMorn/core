@@ -16,27 +16,39 @@ import { ReactiveFlags } from './constants'
 import { warn } from './warning'
 
 export interface Target {
+  /** 是否跳过响应式转换 */
   [ReactiveFlags.SKIP]?: boolean
+  /**是否是响应式对象 */
   [ReactiveFlags.IS_REACTIVE]?: boolean
+  /** 是否是只读对象 */
   [ReactiveFlags.IS_READONLY]?: boolean
+  /** 是否是浅响应式对象 */
   [ReactiveFlags.IS_SHALLOW]?: boolean
+  /** 原始对象 */
   [ReactiveFlags.RAW]?: any
 }
-
+/** 响应式对象的WeakMap，用于存储响应式对象和其代理对象的映射关系 */
 export const reactiveMap: WeakMap<Target, any> = new WeakMap<Target, any>()
+
+/** 浅响应式对象的WeakMap，用于存储浅响应式对象和其代理对象的映射关系 */
 export const shallowReactiveMap: WeakMap<Target, any> = new WeakMap<
   Target,
   any
 >()
+/** 只读对象的WeakMap，用于存储只读对象和其代理对象的映射关系 */
 export const readonlyMap: WeakMap<Target, any> = new WeakMap<Target, any>()
+/** 浅只读对象的WeakMap，用于存储浅只读对象和其代理对象的映射关系 */
 export const shallowReadonlyMap: WeakMap<Target, any> = new WeakMap<
   Target,
   any
 >()
 
 enum TargetType {
+  /**  无效对象 */
   INVALID = 0,
+  /** 普通对象 */
   COMMON = 1,
+  /** 集合对象 */
   COLLECTION = 2,
 }
 
@@ -56,12 +68,14 @@ function targetTypeMap(rawType: string) {
 }
 
 function getTargetType(value: Target) {
+  /** 如果对象被跳过响应式转换或不可扩展，则返回无效对象类型 */
   return value[ReactiveFlags.SKIP] || !Object.isExtensible(value)
     ? TargetType.INVALID
     : targetTypeMap(toRawType(value))
 }
 
 // only unwrap nested ref
+/** 如果值是ref，则返回ref，否则返回值本身 */
 export type UnwrapNestedRefs<T> = T extends Ref ? T : UnwrapRefSimple<T>
 
 declare const ReactiveMarkerSymbol: unique symbol
@@ -254,6 +268,15 @@ export function shallowReadonly<T extends object>(target: T): Readonly<T> {
   )
 }
 
+/**
+ * 创建响应式对象的代理
+ * @param target 目标对象
+ * @param isReadonly 是否只读
+ * @param baseHandlers 基础处理器
+ * @param collectionHandlers 集合处理器
+ * @param proxyMap 代理映射表
+ * @returns 响应式对象的代理
+ */
 function createReactiveObject(
   target: Target,
   isReadonly: boolean,
@@ -273,26 +296,42 @@ function createReactiveObject(
   }
   // target is already a Proxy, return it.
   // exception: calling readonly() on a reactive object
+  /**
+   * 如果目标对象已经是代理对象，且不是只读模式下的响应式对象，则直接返回目标对象
+   */
   if (
     target[ReactiveFlags.RAW] &&
     !(isReadonly && target[ReactiveFlags.IS_REACTIVE])
   ) {
     return target
   }
+
   // only specific value types can be observed.
+  /**
+   * 如果目标对象的类型无效，则直接返回目标对象
+   */
   const targetType = getTargetType(target)
   if (targetType === TargetType.INVALID) {
     return target
   }
   // target already has corresponding Proxy
+  /**
+   * 如果目标对象已经创建了代理对象，则直接返回代理对象
+   */
   const existingProxy = proxyMap.get(target)
   if (existingProxy) {
     return existingProxy
   }
+  /**
+   * 创建代理对象
+   */
   const proxy = new Proxy(
     target,
     targetType === TargetType.COLLECTION ? collectionHandlers : baseHandlers,
   )
+  /**
+   * 将目标对象与代理对象关联起来，以便后续可以通过目标对象快速获取到代理对象
+   */
   proxyMap.set(target, proxy)
   return proxy
 }

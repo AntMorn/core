@@ -42,13 +42,21 @@ export enum EffectFlags {
   /**
    * ReactiveEffect only
    */
+  /** (值为1): 表示该effect处于活跃状态，可以正常执行 */
   ACTIVE = 1 << 0,
+  /** (值为2): 表示该effect正在运行中 */
   RUNNING = 1 << 1,
+  /** (值为4): 表示该effect正在进行依赖收集 */
   TRACKING = 1 << 2,
+  /** (值为8): 表示该effect已被通知需要重新运行 */
   NOTIFIED = 1 << 3,
+  /** (值为16): 表示该effect的数据已脏，需要重新计算 */
   DIRTY = 1 << 4,
+  /** (值为32): 表示允许递归调用该effect */
   ALLOW_RECURSE = 1 << 5,
+  /** (值为64): 表示该effect已被暂停 */
   PAUSED = 1 << 6,
+  /** (值为128): 表示该effect已经被执行过并求值 */
   EVALUATED = 1 << 7,
 }
 
@@ -119,12 +127,20 @@ export class ReactiveEffect<T = any>
     }
   }
 
+  /**
+   * 将当前 effect 暂停，后续触发依赖更新时不会立即执行，而是加入到一个队列中等待恢复
+   */
   pause(): void {
     this.flags |= EffectFlags.PAUSED
   }
 
+  /**
+   * 恢复当前 effect 的运行，并触发依赖更新
+   * 这是一个典型的 “懒更新 + 补偿机制” ，常用于 Vue Use 中的 pausableWatch 或组件失活（Deactivated）时的优化场景
+   */
   resume(): void {
     if (this.flags & EffectFlags.PAUSED) {
+      // 清除当前 effect 的暂停状态
       this.flags &= ~EffectFlags.PAUSED
       if (pausedQueueEffects.has(this)) {
         pausedQueueEffects.delete(this)
@@ -151,11 +167,12 @@ export class ReactiveEffect<T = any>
   run(): T {
     // TODO cleanupEffect
 
+    // 如果 effect 不是活跃状态，直接执行 fn 并返回结果
     if (!(this.flags & EffectFlags.ACTIVE)) {
       // stopped during cleanup
       return this.fn()
     }
-
+    // 将当前 effect 标记为运行中
     this.flags |= EffectFlags.RUNNING
     cleanupEffect(this)
     prepareDeps(this)
@@ -237,7 +254,9 @@ let batchDepth = 0
 let batchedSub: Subscriber | undefined
 let batchedComputed: Subscriber | undefined
 
+/** 用于批量处理副作用（effect）的调度执行 */
 export function batch(sub: Subscriber, isComputed = false): void {
+  // 为批量处理，设置一个标志位，表示该 effect 已经被通知过
   sub.flags |= EffectFlags.NOTIFIED
   if (isComputed) {
     sub.next = batchedComputed
@@ -298,6 +317,11 @@ export function endBatch(): void {
   if (error) throw error
 }
 
+/**
+ * 为副作用函数准备依赖项
+ * 这是一个内部函数，用于在副作用函数运行前，准备好所有依赖项的版本号，以便后续比较是否需要触发更新
+ * @param sub - 要准备依赖项的 ReactiveEffect 实例
+ */
 function prepareDeps(sub: Subscriber) {
   // Prepare deps for tracking, starting from the head
   for (let link = sub.deps; link; link = link.nextDep) {
@@ -560,6 +584,11 @@ export function onEffectCleanup(fn: () => void, failSilently = false): void {
   }
 }
 
+/**
+ * 清除副作用函数
+ * 用于在副作用函数运行前，清除之前注册的清理函数
+ * @param e - 要清除副作用的 ReactiveEffect 实例
+ */
 function cleanupEffect(e: ReactiveEffect) {
   const { cleanup } = e
   e.cleanup = undefined

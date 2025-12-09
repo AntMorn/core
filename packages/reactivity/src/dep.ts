@@ -26,8 +26,29 @@ export let globalVersion = 0
  * A Link is also a node in two doubly-linked lists - one for the associated
  * sub to track all its deps, and one for the associated dep to track all its
  * subs.
- *
+ *  // 一个 Dep 可以有多个订阅者
+    Dep1 -> Sub1, Sub2, Sub3
+
+    // 一个订阅者可以依赖多个 Dep
+    Sub1 -> Dep1, Dep2, Dep3、
+    每个 Dep 和 Subscriber 之间的连接都由一个独立的 Link 实例表示。
  * @internal
+    Link 同时作为两个双向链表的节点：
+
+    订阅者的依赖链表
+    每个订阅者(Sub)通过 deps 和 depsTail 维护它所依赖的所有 Dep
+
+    effect.deps 指向第一个依赖
+    effect.depsTail 指向最后一个依赖
+    通过 nextDep/prevDep 遍历所有依赖
+    effect.deps -> depA -> depB -> depC <- effect.depsTail
+    
+    使用 prevDep 和 nextDep 指针连接
+
+    依赖的订阅者链表
+    每个 Dep 通过 subs 维护订阅它的所有 Sub
+    使用 prevSub 和 nextSub 指针连接
+
  */
 export class Link {
   /**
@@ -35,6 +56,9 @@ export class Link {
    * - During the run, a link's version is synced with the source dep on access
    * - After the run, links with version -1 (that were never used) are cleaned
    *   up
+   *   属性用于优化依赖追踪，避免不必要的重新计算。
+   *   / 当访问响应式属性时，链接的版本号与 Dep 同步
+        link.version = dep.version // 例如变为 5
    */
   version: number
 
@@ -43,6 +67,7 @@ export class Link {
    */
   nextDep?: Link
   prevDep?: Link
+
   nextSub?: Link
   prevSub?: Link
   prevActiveLink?: Link
@@ -68,6 +93,7 @@ export class Dep {
   version = 0
   /**
    * Link between this dep and the current active effect
+   * 表示当前 Dep（依赖）与当前激活的副作用(activeSub)之间的连接关系
    */
   activeLink?: Link = undefined
 
@@ -255,18 +281,58 @@ export const ARRAY_ITERATE_KEY: unique symbol = Symbol(
  * This will check which effect is running at the moment and record it as dep
  * which records all effects that depend on the reactive property.
  *
- * @param target - Object holding the reactive property.
+ * @param target - 指的是包含被访问或修改的响应式属性的那个对象
  * @param type - Defines the type of access to the reactive property.
  * @param key - Identifier of the reactive property to track.
+ *  检查是否应该追踪 (shouldTrack) 以及是否有激活的订阅者 (activeSub)
+    获取或创建目标对象的依赖映射 (depsMap)
+    获取或创建特定属性的依赖对象 (dep)
+    调用 dep.track() 建立依赖关系
+
+    // 假设有以下响应式对象
+    const state = reactive({ count: 0, name: 'Vue' })
+
+    // 当在 effect 中访问属性时
+    effect(() => {
+      console.log(state.count) // 触发 track(state, TrackOpTypes.GET, 'count')
+      console.log(state.name)  // 触发 track(state, TrackOpTypes.GET, 'name')
+    })
+
+    // targetMap 的结构会变成：
+    WeakMap {
+      state (原始对象) => Map {
+        'count' => Dep (记录这个属性的依赖), Dep { map: Map, key: 'count' }
+        'name' => Dep (记录这个属性的依赖)
+      }
+    }
  */
 export function track(target: object, type: TrackOpTypes, key: unknown): void {
+  // 检查是否应该追踪 (shouldTrack) 以及是否有激活的订阅者 (activeSub)
   if (shouldTrack && activeSub) {
+    // 获取或创建目标对象的依赖映射 (depsMap)
     let depsMap = targetMap.get(target)
+    // 如果目标对象的依赖映射不存在，则创建一个新的 Map
     if (!depsMap) {
+      /**
+       * targetMap 的结构
+        targetMap: WeakMap<{
+          targetObject: Map<{
+            key: Dep // 每个属性对应一个 Dep
+          }>
+        }>
+       */
       targetMap.set(target, (depsMap = new Map()))
     }
     let dep = depsMap.get(key)
+    /** 如果属性的依赖对象不存在，则创建一个新的 Dep 实例 */
     if (!dep) {
+      /**
+       * 如果不存在对应的 Dep 对象，则：
+        创建一个新的 Dep 实例
+        将其存储在 depsMap 中，以 key 为键
+        设置 dep.map 指向 depsMap，用于后续清理
+        设置 dep.key 保存属性键
+       */
       depsMap.set(key, (dep = new Dep()))
       dep.map = depsMap
       dep.key = key

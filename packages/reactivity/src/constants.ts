@@ -2,8 +2,11 @@
 // debugger events
 
 export enum TrackOpTypes {
+  /** 获取属性值 (obj.prop) */
   GET = 'get',
+  /** 检查属性是否存在 (prop in obj) */
   HAS = 'has',
+  /** 遍历对象属性 (for...in, Object.keys()等) */
   ITERATE = 'iterate',
 }
 

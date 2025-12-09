@@ -293,18 +293,34 @@ function reduce(
 }
 
 // instrument identity-sensitive methods to account for reactive proxies
+/**
+ * 
+ * @param self Identity-sensitive methods（身份敏感方法）是指那些在比较值时使用严格相等（===）而不是结构相等的方法。对于这些方法，响应式代理对象和原始对象被视为不同的对象，即使它们包含相同的数据。
+      典型的 identity-sensitive 数组方法包括：
+      indexOf
+      lastIndexOf
+      includes
+ * @param method 
+ * @param args 
+ * @returns 
+ */
 function searchProxy(
   self: unknown[],
   method: keyof Array<any>,
   args: unknown[],
 ) {
+  /** 获取原始对象 */
   const arr = toRaw(self) as any
+  /** 触发迭代依赖 */
   track(arr, TrackOpTypes.ITERATE, ARRAY_ITERATE_KEY)
   // we run the method using the original args first (which may be reactive)
+  /** 使用原始参数（可能包含响应式代理）执行方法 */
   const res = arr[method](...args)
 
   // if that didn't work, run it again using raw values.
+  /** 如果返回 -1 或 false（表示未找到），并且第一个参数是代理对象 */
   if ((res === -1 || res === false) && isProxy(args[0])) {
+    /** 将代理对象转换为原始对象后再次执行方法 */
     args[0] = toRaw(args[0])
     return arr[method](...args)
   }

@@ -227,8 +227,8 @@ export function createAppContext(): AppContext {
     config: {
       isNativeTag: NO,
       performance: false,
-      globalProperties: {},
-      optionMergeStrategies: {},
+      globalProperties: {}, //  定义在整个应用范围内可用的全局属性
+      optionMergeStrategies: {}, // 当组件选项需要从父组件合并到子组件时，可以定义特定的合并策略
       errorHandler: undefined,
       warnHandler: undefined,
       compilerOptions: {},
@@ -263,9 +263,11 @@ export function createAppAPI<HostElement>(
       __DEV__ && warn(`root props passed to app.mount() must be an object.`)
       rootProps = null
     }
-
+    // 创建一个app上下文
     const context = createAppContext()
+    // 创建一个插件容器
     const installedPlugins = new WeakSet()
+
     const pluginCleanupFns: Array<() => any> = []
 
     let isMounted = false
@@ -296,9 +298,11 @@ export function createAppAPI<HostElement>(
         if (installedPlugins.has(plugin)) {
           __DEV__ && warn(`Plugin has already been applied to target app.`)
         } else if (plugin && isFunction(plugin.install)) {
+          // 如果插件中含有install方法
           installedPlugins.add(plugin)
           plugin.install(app, ...options)
         } else if (isFunction(plugin)) {
+          // 如果插件没有install方法，但是一个函数
           installedPlugins.add(plugin)
           plugin(app, ...options)
         } else if (__DEV__) {
@@ -310,6 +314,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 混入 兼容vue2 的写法
       mixin(mixin: ComponentOptions) {
         if (__FEATURE_OPTIONS_API__) {
           if (!context.mixins.includes(mixin)) {
@@ -326,10 +331,12 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 组件的注册
       component(name: string, component?: Component): any {
         if (__DEV__) {
           validateComponentName(name, context.config)
         }
+        // 如果不存在组件，就根据名字返回组件
         if (!component) {
           return context.components[name]
         }
@@ -339,7 +346,7 @@ export function createAppAPI<HostElement>(
         context.components[name] = component
         return app
       },
-
+      // 注册指令
       directive(name: string, directive?: Directive) {
         if (__DEV__) {
           validateDirectiveName(name)
@@ -355,6 +362,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // app.mount('#root')
       mount(
         rootContainer: HostElement,
         isHydrate?: boolean,
@@ -445,7 +453,9 @@ export function createAppAPI<HostElement>(
           warn(`Cannot unmount an app that is not mounted.`)
         }
       },
-
+      // 在全局的provides对象上注册一个值，这个值可以在组件中被注入
+      // 这个方法通常在插件中使用，插件可以通过app.provide()方法注册一个值，
+      // 这个值可以在组件中被注入，从而实现插件之间的通信
       provide(key, value) {
         if (__DEV__ && (key as string | symbol) in context.provides) {
           if (hasOwn(context.provides, key as string | symbol)) {
@@ -467,6 +477,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 创建一个app实例
       runWithContext(fn) {
         const lastApp = currentApp
         currentApp = app
